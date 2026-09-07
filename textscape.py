@@ -1,75 +1,106 @@
+import json
+import urllib.request
 import streamlit as st
-import google.generativeai as genai
 
-st.set_page_config(page_title="AI Game Master", page_icon="⚔️", layout="centered")
+st.set_page_config(page_title="TextScape AI RPG", page_icon="🌌", layout="centered")
 
-st.title("⚔️ AI Game Master RPG")
-st.caption("Petualangan interaktif berbasis teks powered by Gemini")
+st.title("🌌 TextScape: All-New RPG")
+st.caption("Petualangan Teks Interaktif — Direct REST API Mode")
 
-# Sidebar untuk konfigurasi
+# Sidebar Pengaturan
 with st.sidebar:
-    st.header("Pengaturan Game")
-    api_key = st.text_input("Gemini API Key", type="password", help="Dapatkan API Key gratis di Google AI Studio")
+    st.header("⚙️ Pengaturan Game")
+    api_key = st.text_input("Gemini API Key:", type="password")
+    
+    st.divider()
+    st.header("🎭 Buat Karakter")
+    player_name = st.text_input("Nama Karakter:", "Petualang")
     genre = st.selectbox(
-        "Pilih Tema Petualangan:",
-        ["Cyberpunk Detective", "Dark Fantasy", "Sci-Fi Space Survival", "Post-Apocalyptic"]
+        "Pilih Semesta Dunia:",
+        [
+            "🌌 Cyberpunk 2099 (Neon, Hacker, & Cyborg)",
+            "🗡️ Dark Fantasy (Sihir, Monster, & Kerajaan)",
+            "🧟 Post-Apocalyptic (Zombie & Survival)",
+            "🚀 Galactic Explorer (Luar Angkasa & Alien)"
+        ]
     )
     
-    if st.button("Reset Game / Mulai Baru"):
+    st.divider()
+    if st.button("🔄 Restart Petualangan", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
 if not api_key:
-    st.warning("Masukkan Gemini API Key kamu di sidebar untuk memulai petualangan!", icon="🔑")
+    st.info("💡 Masukkan Gemini API Key kamu di sidebar untuk mulai bermain!")
     st.stop()
 
-# Konfigurasi Gemini API
-genai.configure(api_key=api_key)
+# Fungsi Panggil Gemini REST API Langsung
+def call_gemini_api(messages_history, system_prompt, key):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}"
+    
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "contents": messages_history
+    }
+    
+    data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    
+    with urllib.request.urlopen(req) as response:
+        res_body = json.loads(response.read().decode('utf-8'))
+        return res_body['candidates'][0]['content']['parts'][0]['text']
 
 SYSTEM_PROMPT = f"""
-Kamu adalah seorang Game Master (GM) RPG ahli untuk genre {genre}.
-Tugas utama kamu:
-1. Buat narasi singkat yang imersif, hidup, dan penuh suasana (maksimal 2-3 paragraf).
-2. Setiap kali merespons aksi pemain, perhitungkan konsekuensinya secara realistis.
-3. Selalu akhiri respons kamu dengan 3 pilihan aksi bernomor (1, 2, 3), lalu ingatkan pemain bahwa mereka juga boleh mengetik aksi bebas sendiri.
+Kamu adalah seorang Game Master (GM) RPG yang sangat seru dan interaktif.
+Pemain bernama: {player_name}
+Genre petualangan: {genre}
+
+Panduan Merespons:
+1. Buat narasi pembuka atau lanjutan yang imersif dan penuh suspense (maksimal 2-3 paragraf).
+2. Tanggapi setiap aksi pemain dengan efek/konsekuensi yang realistis.
+3. Gunakan formatting Markdown (teks tebal untuk aksi penting, cetak miring untuk dialog).
+4. SELALU akhiri respons kamu dengan memberikan 3 Opsi Aksi Bernomor (1, 2, 3), lalu ingatkan bahwa pemain bebas mengetikkan tindakan unik mereka sendiri.
 """
 
-model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
-    system_instruction=SYSTEM_PROMPT
-)
-
-# Inisialisasi riwayat pesan
+# Inisialisasi Riwayat Percakapan
 if "messages" not in st.session_state or len(st.session_state.messages) == 0:
     st.session_state.messages = []
-    
-    # Generate cerita pembuka secara otomatis
-    with st.spinner("Game Master sedang menyusun dunia..."):
-        chat = model.start_chat(history=[])
-        opening_response = chat.send_message("Mulai petualangan baru! Buat adegan pembuka yang menarik dan berikan pilihan aksi pertama.")
-        st.session_state.messages.append({"role": "assistant", "content": opening_response.text})
+    with st.spinner("🎲 Game Master sedang merancang duniamu..."):
+        try:
+            init_history = [{
+                "role": "user", 
+                "parts": [{"text": f"Mulai petualangan baru di dunia {genre} untuk {player_name}. Buat situasi pembuka yang darurat dan berikan 3 pilihan aksi awal!"}]
+            }]
+            response_text = call_gemini_api(init_history, SYSTEM_PROMPT, api_key)
+            st.session_state.messages.append({"role": "assistant", "content": response_text})
+        except Exception as e:
+            st.error(f"Gagal menghubungkan ke Gemini. Cek API Key kamu. Detail: {e}")
+            st.stop()
 
-# Tampilkan seluruh riwayat chat
+# Tampilkan Riwayat Chat
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
+    avatar = "🤖" if msg["role"] == "assistant" else "🤠"
+    with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
 
-# Input dari pemain
-if user_input := st.chat_input("Ketik tindakanmu atau pilih nomor aksi..."):
-    # Tampilkan input pemain
-    st.chat_message("user").markdown(user_input)
+# Input dari Pemain
+if user_input := st.chat_input("Ketik Opsi (1/2/3) atau tindakan bebasmu di sini..."):
+    st.chat_message("user", avatar="🤠").markdown(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
-    # Format riwayat percakapan untuk API Gemini
-    history_gemini = []
-    for m in st.session_state.messages[:-1]:
+    # Susun riwayat percakapan untuk API
+    api_history = []
+    for m in st.session_state.messages:
         role = "user" if m["role"] == "user" else "model"
-        history_gemini.append({"role": role, "parts": [m["content"]]})
+        api_history.append({"role": role, "parts": [{"text": m["content"]}]})
 
-    # Kirim ke model dan dapatkan balasan GM
-    chat = model.start_chat(history=history_gemini)
-    with st.chat_message("assistant"):
-        with st.spinner("Game Master sedang merespons..."):
-            response = chat.send_message(user_input)
-            st.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
+    with st.chat_message("assistant", avatar="🤖"):
+        with st.spinner("🎲 Game Master sedang merespons..."):
+            try:
+                response_text = call_gemini_api(api_history, SYSTEM_PROMPT, api_key)
+                st.markdown(response_text)
+                st.session_state.messages.append({"role": "assistant", "content": response_text})
+            except Exception as e:
+                st.error(f"Terjadi kesalahan: {e}")
